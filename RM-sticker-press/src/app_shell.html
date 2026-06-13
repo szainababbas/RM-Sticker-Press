@@ -1,0 +1,1445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sticker Press — SVG → reMarkable native ink</title>
+<meta name="theme-color" content="#16181d">
+<link rel="manifest" href='data:application/manifest+json,{"name":"Sticker Press","short_name":"StickerPress","display":"standalone","background_color":"%2316181d","theme_color":"%2316181d","start_url":".","icons":[]}'>
+<style>
+  :root {
+    --bg:#16181d; --panel:#1f232b; --panel2:#262b35; --line:#343a46;
+    --txt:#e8eaf0; --dim:#9aa2b1; --acc:#5ec8b0; --warn:#e8b04b; --bad:#e06c6c;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14px/1.45 -apple-system, "Segoe UI", Roboto, sans-serif;
+         background:var(--bg); color:var(--txt); height:100vh; display:flex; flex-direction:column; }
+  header { display:flex; align-items:center; gap:14px; padding:10px 16px;
+           background:var(--panel); border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  header h1 { font-size:16px; margin:0; letter-spacing:.4px; }
+  header h1 span { color:var(--acc); }
+  .grow { flex:1; }
+  main { flex:1; display:flex; min-height:0; }
+  #canvasWrap { flex:1; display:flex; align-items:center; justify-content:center;
+                padding:14px; min-width:0; position:relative; }
+  #cv { background:#fff; border-radius:4px; box-shadow:0 6px 30px rgba(0,0,0,.5);
+        touch-action:none; cursor:default; max-height:100%; max-width:100%; }
+  #side { width:320px; background:var(--panel); border-left:1px solid var(--line);
+          overflow-y:auto; padding:12px; display:flex; flex-direction:column; gap:12px; }
+  fieldset { border:1px solid var(--line); border-radius:8px; padding:10px 12px; margin:0; }
+  legend { color:var(--dim); font-size:11px; text-transform:uppercase; letter-spacing:1px; padding:0 6px; }
+  button { background:var(--panel2); color:var(--txt); border:1px solid var(--line);
+           border-radius:6px; padding:6px 10px; cursor:pointer; font-size:13px; }
+  button:hover { border-color:var(--acc); }
+  button.primary { background:var(--acc); color:#10231e; font-weight:600; border-color:var(--acc); }
+  button.small { padding:3px 8px; font-size:12px; }
+  button:disabled { opacity:.4; cursor:default; }
+  input[type=text] { background:var(--panel2); border:1px solid var(--line); color:var(--txt);
+                     border-radius:6px; padding:5px 8px; width:100%; }
+  input[type=range] { width:100%; accent-color:var(--acc); }
+  select { background:var(--panel2); color:var(--txt); border:1px solid var(--line);
+           border-radius:6px; padding:5px 6px; width:100%; }
+  label.row { display:flex; align-items:center; justify-content:space-between; gap:8px; margin:6px 0; }
+  label.row > span:first-child { color:var(--dim); font-size:12px; white-space:nowrap; }
+  label.row > * :last-child { flex:1; }
+  .ctl { flex:1; }
+  #drop { border:2px dashed var(--line); border-radius:8px; padding:16px; text-align:center;
+          color:var(--dim); cursor:pointer; transition:.15s; font-size:13px; }
+  #drop.over { border-color:var(--acc); color:var(--acc); background:rgba(94,200,176,.06); }
+  #stickerList { display:flex; flex-direction:column; gap:4px; max-height:140px; overflow-y:auto; }
+  .stkRow { display:flex; align-items:center; gap:6px; padding:4px 8px; border-radius:6px;
+            cursor:pointer; border:1px solid transparent; font-size:13px; }
+  .stkRow:hover { background:var(--panel2); }
+  .stkRow.sel { border-color:var(--acc); background:rgba(94,200,176,.08); }
+  .stkRow .nm { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .swatches { display:flex; flex-wrap:wrap; gap:5px; margin-top:4px; }
+  .sw { width:22px; height:22px; border-radius:5px; cursor:pointer; border:2px solid var(--line); }
+  .sw.sel { border-color:var(--acc); box-shadow:0 0 0 2px rgba(94,200,176,.4); }
+  #pages { display:flex; gap:5px; align-items:center; flex-wrap:wrap; }
+  .pageTab { padding:4px 10px; border-radius:6px; background:var(--panel2); cursor:pointer;
+             border:1px solid var(--line); font-size:12px; }
+  .pageTab.cur { border-color:var(--acc); color:var(--acc); }
+  #ink { display:flex; align-items:center; gap:8px; font-size:12px; color:var(--dim); min-width:170px; }
+  #inkBar { width:90px; height:8px; border-radius:4px; background:var(--panel2); overflow:hidden; }
+  #inkFill { height:100%; width:0%; background:var(--acc); transition:.2s; }
+  #log { font-size:12px; color:var(--dim); max-height:90px; overflow-y:auto; white-space:pre-wrap; }
+  #log .w { color:var(--warn); }
+  .hint { font-size:11px; color:var(--dim); margin-top:6px; }
+  .btnRow { display:flex; gap:6px; flex-wrap:wrap; margin-top:6px; }
+  .seg { display:flex; border:1px solid var(--line); border-radius:6px; overflow:hidden; }
+  .seg button { border:0; border-radius:0; flex:1; }
+  .seg button.on { background:var(--acc); color:#10231e; font-weight:600; }
+  #emptyMsg { position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+              pointer-events:none; color:#aab; font-size:15px; text-align:center; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Sticker <span>Press</span></h1>
+  <input id="docName" type="text" value="Sticker Sheet" style="width:170px" title="Document name on the tablet">
+  <select id="devSel" style="width:170px" title="Target device">
+    <option value="paperpro">Paper Pro</option>
+    <option value="move">Paper Pro Move</option>
+    <option value="rm2">reMarkable 2</option>
+    <option value="pure">Paper Pure</option>
+  </select>
+  <div class="grow"></div>
+  <div id="ink"><div id="inkBar"><div id="inkFill"></div></div><span id="inkTxt">0 pts</span></div>
+  <button id="undoBtn" title="Undo (Ctrl+Z)">↩</button>
+  <button id="redoBtn" title="Redo (Ctrl+Y)">↪</button>
+  <button id="sendBtn" title="Send over USB to the tablet's web interface (10.11.99.1)">→ Tablet</button>
+  <button id="exportBtn" class="primary">Export .rmdoc</button>
+</header>
+<main>
+  <div id="canvasWrap">
+    <canvas id="cv"></canvas>
+    <div id="emptyMsg">Drop SVG files anywhere,<br>or start with the test star →</div>
+  </div>
+  <div id="side">
+    <fieldset>
+      <legend>Add stickers</legend>
+      <div id="drop">Drop SVG stickers or a PDF journal here<br>(or click to browse)</div>
+      <input id="file" type="file" accept=".svg,image/svg+xml,.pdf,application/pdf" multiple hidden>
+      <label class="row"><span>Import as</span>
+        <select id="importMode" class="ctl">
+          <option value="sticker">Stickers (25% size)</option>
+          <option value="page">Full pages (one per file)</option>
+        </select></label>
+      <div class="btnRow">
+        <button id="starBtn">★ Add test star</button>
+      </div>
+      <div class="hint">Run the star export first — if it appears as selectable ink on your
+        tablet, the pipeline works. Flatten text to curves before exporting SVGs
+        (text/&lt;use&gt;/masks are not converted).</div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Pages</legend>
+      <div id="pdfBanner" style="display:none; margin-bottom:8px">
+        <div style="font-size:12px; color:var(--acc)" id="pdfInfo"></div>
+        <div class="btnRow"><button id="pdfRemoveBtn" class="small">Remove PDF</button></div>
+        <div class="hint">PDF-hybrid mode: the PDF renders as the page background on the
+          tablet (with working links); your stickers export as ink on top.</div>
+      </div>
+      <div id="pages"></div>
+      <label class="row" style="margin-top:8px">
+        <span>Writing layer</span>
+        <input id="writingLayer" type="checkbox" style="accent-color:var(--acc)">
+      </label>
+      <div class="hint">Exports stickers on a "Template" layer with an empty "Writing"
+        layer on top — your notes stay separate from the artwork on the tablet.</div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Stickers on this page</legend>
+      <div id="stickerList"></div>
+      <div class="btnRow">
+        <button id="dupBtn" class="small">Duplicate</button>
+        <button id="delBtn" class="small">Delete</button>
+        <button id="fitBtn" class="small">Fit to page</button>
+      </div>
+    </fieldset>
+
+    <fieldset id="styleBox" style="display:none">
+      <legend>Selected sticker</legend>
+      <label class="row"><span>Pen</span>
+        <select id="penSel" class="ctl"></select></label>
+      <label class="row"><span>Thickness</span>
+        <input id="thick" class="ctl" type="range" min="1" max="8" step="0.5" value="2"></label>
+      <label class="row"><span>Size</span>
+        <input id="size" class="ctl" type="range" min="4" max="140" step="1" value="25"></label>
+      <label class="row"><span>Rotation</span>
+        <input id="rot" class="ctl" type="range" min="-180" max="180" step="1" value="0"></label>
+      <label class="row"><span>Fill</span>
+        <select id="fillMode" class="ctl">
+          <option value="outline">Outlines only</option>
+          <option value="hatch">Hatch fill only</option>
+          <option value="both" selected>Outline + hatch</option>
+          <option value="solid">Solid fill (commercial style)</option>
+        </select></label>
+      <label class="row"><span>Hatch angle</span>
+        <select id="hatchAngle" class="ctl">
+          <option value="0">0°</option><option value="45" selected>45°</option>
+          <option value="90">90°</option><option value="135">135°</option>
+          <option value="cross">Cross-hatch</option>
+        </select></label>
+      <label class="row"><span>Hatch gap</span>
+        <input id="hatchGap" class="ctl" type="range" min="3" max="24" step="1" value="7"></label>
+      <label class="row"><span>Colours</span>
+        <select id="colMode" class="ctl">
+          <option value="auto">From artwork (auto-matched)</option>
+          <option value="override">Single colour override</option>
+        </select></label>
+      <div class="swatches" id="swatches"></div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Project</legend>
+      <div class="btnRow">
+        <button id="saveBtn" class="small">Save project</button>
+        <button id="loadBtn" class="small">Load project</button>
+        <button id="newBtn" class="small">New project</button>
+        <input id="projFile" type="file" accept=".json" hidden>
+      </div>
+      <div class="hint">Work is autosaved in this browser as you go.</div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Log</legend>
+      <div id="log"></div>
+    </fieldset>
+  </div>
+</main>
+
+<script>
+//__INLINE_RM_WRITER__
+</script>
+<script>
+"use strict";
+/* ================= Sticker Press app ================= */
+const $ = (id) => document.getElementById(id);
+
+/* ---------- palette / pens ---------- */
+const PALETTE = RMW.COLORS;
+const PENS = [
+  { id: 17, name: "Fineliner" },
+  { id: 15, name: "Ballpoint" },
+  { id: 16, name: "Marker" },
+  { id: 14, name: "Pencil" },
+  { id: 13, name: "Mech. pencil" },
+  { id: 12, name: "Paintbrush" },
+  { id: 21, name: "Calligraphy" },
+  { id: 23, name: "Shader" },
+  { id: 18, name: "Highlighter" },
+];
+
+/* ---------- state ---------- */
+let state = {
+  device: "paperpro",
+  pages: [{ stickers: [] }],
+  cur: 0,
+  selected: null,
+  writingLayer: false,
+  pdf: null, // { name, bytes: Uint8Array, pageSizes: [{w,h}] }
+};
+let idSeq = 1;
+let undoStack = [], redoStack = [];
+// PDF bytes live outside undo snapshots (too big to copy per step);
+// snapshots keep a name reference into this in-memory library.
+const _pdfLibrary = {};
+
+const dev = () => RMW.DEVICES[state.device];
+const page = () => state.pages[state.cur];
+/* Page geometry. In PDF-hybrid mode, ink coordinates are the PDF rendered at
+   226 DPI (calibrated on-device: all candidate mappings back-solved to
+   ~3.14 ink units per PDF point = 226/72), x centred on page width, y from top. */
+const PDF_INK_SCALE = 226 / 72;
+function pageDims(idx) {
+  if (state.pdf) {
+    const pg = state.pages[idx == null ? state.cur : idx];
+    const ps = state.pdf.pageSizes[(pg && pg.pdfPage) || 0] || state.pdf.pageSizes[0];
+    return { width: ps.w * PDF_INK_SCALE, height: ps.h * PDF_INK_SCALE };
+  }
+  return dev();
+}
+const sel = () => page().stickers.find((s) => s.id === state.selected) || null;
+
+function serializeState() {
+  return JSON.stringify({
+    pages: state.pages, cur: state.cur, device: state.device,
+    writingLayer: state.writingLayer,
+    pdfRef: state.pdf ? state.pdf.name : null,
+  });
+}
+function snapshot() {
+  undoStack.push(serializeState());
+  if (undoStack.length > 60) undoStack.shift();
+  redoStack.length = 0;
+  updateUndoButtons();
+}
+function restore(json) {
+  const s = JSON.parse(json);
+  state.pages = s.pages; state.cur = Math.min(s.cur, s.pages.length - 1);
+  state.device = s.device; state.selected = null;
+  state.writingLayer = !!s.writingLayer;
+  const lib = s.pdfRef ? _pdfLibrary[s.pdfRef] : null;
+  state.pdf = lib ? { name: s.pdfRef, bytes: lib.bytes, pageSizes: lib.pageSizes } : null;
+  _pdfDoc = null; _pdfBitmaps = {}; _pdfRendering = {};
+  for (const p of state.pages) for (const st of p.stickers) st._fillsFresh = !!(st.fills && st.fills.length) || st.fillMode === "outline";
+  refreshAll();
+}
+function undo() { if (!undoStack.length) return;
+  redoStack.push(serializeState());
+  restore(undoStack.pop()); updateUndoButtons(); }
+function redo() { if (!redoStack.length) return;
+  undoStack.push(serializeState());
+  restore(redoStack.pop()); updateUndoButtons(); }
+function updateUndoButtons() { $("undoBtn").disabled = !undoStack.length; $("redoBtn").disabled = !redoStack.length; }
+
+/* ---------- autosave ---------- */
+const AUTOSAVE_KEY = "stickerpress-autosave-v1";
+let autosaveTimer = null;
+function scheduleAutosave() { clearTimeout(autosaveTimer); autosaveTimer = setTimeout(saveLocal, 800); }
+function saveLocal() {
+  try {
+    let pdfSave = null;
+    if (state.pdf) {
+      pdfSave = state.pdf.bytes.length <= 4 * 1024 * 1024
+        ? { name: state.pdf.name, pageSizes: state.pdf.pageSizes, b64: b64FromBytes(state.pdf.bytes) }
+        : { name: state.pdf.name, pageSizes: state.pdf.pageSizes, tooBig: true };
+    }
+    localStorage.setItem(AUTOSAVE_KEY, JSON.stringify({
+      device: state.device, docName: $("docName").value,
+      pages: state.pages, cur: state.cur, idSeq,
+      writingLayer: state.writingLayer,
+      pdf: pdfSave,
+    }));
+  } catch (e) { /* storage full or unavailable — silent; manual save still works */ }
+}
+function loadLocal() {
+  try {
+    const raw = localStorage.getItem(AUTOSAVE_KEY);
+    if (!raw) return false;
+    const d = JSON.parse(raw);
+    if (!d.pages || !d.pages.some((p) => p.stickers.length)) return false;
+    state.device = d.device || "paperpro";
+    state.pages = d.pages;
+    state.cur = Math.min(d.cur || 0, d.pages.length - 1);
+    idSeq = d.idSeq || 1000;
+    state.writingLayer = !!d.writingLayer;
+    $("docName").value = d.docName || "Sticker Sheet";
+    state.pdf = null;
+    if (d.pdf) {
+      if (d.pdf.b64) {
+        const bytes = bytesFromB64(d.pdf.b64);
+        _pdfLibrary[d.pdf.name] = { bytes, pageSizes: d.pdf.pageSizes };
+        state.pdf = { name: d.pdf.name, bytes, pageSizes: d.pdf.pageSizes };
+      } else {
+        setTimeout(() => log(`The PDF "${d.pdf.name}" was too large for autosave — drop it in again to restore PDF mode.`, true), 0);
+        for (const p of state.pages) delete p.pdfPage;
+      }
+    }
+    for (const p of state.pages) for (const st of p.stickers)
+      st._fillsFresh = !!(st.fills && st.fills.length) || st.fillMode === "outline";
+    return true;
+  } catch (e) { return false; }
+}
+window.addEventListener("beforeunload", saveLocal);
+
+function log(msg, warn) {
+  const d = document.createElement("div");
+  if (warn) d.className = "w";
+  d.textContent = msg;
+  $("log").prepend(d);
+}
+
+/* ---------- colour helpers ---------- */
+const _cc = document.createElement("canvas").getContext("2d");
+function cssToRgb(c) {
+  if (!c || c === "none" || c === "transparent") return null;
+  _cc.fillStyle = "#000"; _cc.fillStyle = c;
+  const v = _cc.fillStyle;
+  if (v[0] === "#") {
+    return [parseInt(v.slice(1, 3), 16), parseInt(v.slice(3, 5), 16), parseInt(v.slice(5, 7), 16)];
+  }
+  const m = v.match(/rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)(?:,\s*([\d.]+))?\)/);
+  if (!m) return null;
+  if (m[4] !== undefined && parseFloat(m[4]) < 0.05) return null;
+  return [+m[1], +m[2], +m[3]];
+}
+function nearestColor(rgb) {
+  let best = 0, bd = Infinity;
+  for (let i = 0; i < PALETTE.length; i++) {
+    const p = PALETTE[i].rgb;
+    const dr = rgb[0] - p[0], dg = rgb[1] - p[1], db = rgb[2] - p[2];
+    const d = 0.3 * dr * dr + 0.59 * dg * dg + 0.11 * db * db;
+    if (d < bd) { bd = d; best = i; }
+  }
+  return best; // palette INDEX (not color id)
+}
+const palCss = (i) => `rgb(${PALETTE[i].rgb.join(",")})`;
+
+/* ---------- geometry ---------- */
+function simplifyDP(pts, eps) {
+  if (pts.length < 3) return pts;
+  const keep = new Uint8Array(pts.length); keep[0] = keep[pts.length - 1] = 1;
+  const stack = [[0, pts.length - 1]];
+  while (stack.length) {
+    const [a, b] = stack.pop();
+    const ax = pts[a].x, ay = pts[a].y, bx = pts[b].x, by = pts[b].y;
+    const dx = bx - ax, dy = by - ay;
+    const len2 = dx * dx + dy * dy || 1e-12;
+    let mi = -1, md = -1;
+    for (let i = a + 1; i < b; i++) {
+      const t = Math.max(0, Math.min(1, ((pts[i].x - ax) * dx + (pts[i].y - ay) * dy) / len2));
+      const px = ax + t * dx - pts[i].x, py = ay + t * dy - pts[i].y;
+      const d = px * px + py * py;
+      if (d > md) { md = d; mi = i; }
+    }
+    if (md > eps * eps) { keep[mi] = 1; stack.push([a, mi], [mi, b]); }
+  }
+  return pts.filter((_, i) => keep[i]);
+}
+
+/* split a path "d" into subpath strings, each starting with an absolute M */
+function splitSubpaths(d) {
+  const tokens = d.match(/[a-zA-Z]|-?(?:\d*\.\d+|\d+\.?)(?:[eE][-+]?\d+)?/g) || [];
+  const subs = [];
+  let i = 0, cx = 0, cy = 0, sx = 0, sy = 0, cmd = null, curr = null;
+  const num = () => parseFloat(tokens[i++]);
+  const argc = { M:2,L:2,T:2,H:1,V:1,C:6,S:4,Q:4,A:7,Z:0 };
+  while (i < tokens.length) {
+    let t = tokens[i];
+    if (/[a-zA-Z]/.test(t)) { cmd = t; i++; }
+    else if (cmd === "M") cmd = "L";
+    else if (cmd === "m") cmd = "l";
+    if (!cmd) break;
+    const C = cmd.toUpperCase(), rel = cmd !== C;
+    if (C === "Z") {
+      if (curr) curr.d += "Z";
+      cx = sx; cy = sy;
+      continue;
+    }
+    const n = argc[C];
+    const args = [];
+    for (let k = 0; k < n; k++) args.push(num());
+    if (args.some((v) => isNaN(v))) break;
+    if (C === "M") {
+      if (rel) { cx += args[0]; cy += args[1]; } else { cx = args[0]; cy = args[1]; }
+      sx = cx; sy = cy;
+      curr = { d: `M ${cx} ${cy}` };
+      subs.push(curr);
+      continue;
+    }
+    if (!curr) { curr = { d: `M ${cx} ${cy}` }; subs.push(curr); }
+    curr.d += " " + cmd + " " + args.join(" ");
+    // track endpoint
+    if (C === "H") cx = rel ? cx + args[0] : args[0];
+    else if (C === "V") cy = rel ? cy + args[0] : args[0];
+    else {
+      const ex = args[n - 2], ey = args[n - 1];
+      cx = rel ? cx + ex : ex; cy = rel ? cy + ey : ey;
+    }
+  }
+  return subs.map((s) => s.d);
+}
+
+/* ---------- SVG import ---------- */
+const SHAPE_SEL = "path,rect,circle,ellipse,line,polyline,polygon";
+
+async function buildStickerFromSvg(text, name) {
+  const doc = new DOMParser().parseFromString(text, "image/svg+xml");
+  if (doc.querySelector("parsererror")) throw new Error("Not a valid SVG file");
+  const svg = doc.documentElement;
+
+  // mount hidden for computed styles + CTMs
+  const host = document.createElement("div");
+  // NOTE: must NOT use visibility:hidden — it inherits into the SVG and makes
+  // every element report itself as hidden. Off-screen + opacity keeps it invisible
+  // while computed styles stay truthful.
+  host.style.cssText = "position:absolute;left:-99999px;top:0;width:1000px;height:1000px;opacity:0;pointer-events:none;";
+  document.body.appendChild(host);
+  const live = document.importNode(svg, true);
+  host.appendChild(live);
+
+  try {
+    let vb = live.viewBox && live.viewBox.baseVal && live.viewBox.baseVal.width
+      ? live.viewBox.baseVal
+      : null;
+    if (!vb) {
+      const w = parseFloat(live.getAttribute("width")) || 1000;
+      const h = parseFloat(live.getAttribute("height")) || 1000;
+      vb = { x: 0, y: 0, width: w, height: h };
+      live.setAttribute("viewBox", `0 0 ${w} ${h}`);
+    }
+    // Normalise the rendered size to the viewBox so getCTM() maps into viewBox
+    // units — the same space the hatch raster uses. Without this, SVGs whose
+    // width/height attributes differ from the viewBox get outlines and fills
+    // in different scales/offsets.
+    live.setAttribute("width", vb.width);
+    live.setAttribute("height", vb.height);
+    live.style.width = vb.width + "px";
+    live.style.height = vb.height + "px";
+    const vbDiag = Math.hypot(vb.width, vb.height);
+    const sampleStep = vbDiag / 700;
+
+    const unsupported = live.querySelectorAll("text,image,use").length;
+    if (unsupported) log(`"${name}": ${unsupported} text/image/use element(s) skipped — flatten to curves first.`, true);
+
+    const polylines = []; // {pts, colorIdx}
+    let hasFillAnywhere = false;
+
+    const els = live.querySelectorAll(SHAPE_SEL);
+    for (const el of els) {
+      if (el.closest("defs,symbol,marker,mask,clipPath,pattern")) continue;
+      const cs = getComputedStyle(el);
+      if (cs.display === "none" || cs.visibility === "hidden") continue;
+      const strokeRgb = parseFloat(cs.strokeOpacity) > 0.05 ? cssToRgb(cs.stroke) : null;
+      const fillRgb = parseFloat(cs.fillOpacity) > 0.05 ? cssToRgb(cs.fill) : null;
+      if (!strokeRgb && !fillRgb) continue;
+      if (fillRgb) hasFillAnywhere = true;
+      const outlineRgb = strokeRgb || fillRgb;
+      const ctm = el.getCTM();
+
+      const subDs = el.tagName === "path" ? splitSubpaths(el.getAttribute("d") || "") : [null];
+      for (const sub of subDs) {
+        let target = el;
+        let temp = null;
+        if (sub !== null) {
+          temp = document.createElementNS("http://www.w3.org/2000/svg", "path");
+          temp.setAttribute("d", sub);
+          live.appendChild(temp);
+          target = temp;
+        }
+        let len = 0;
+        try { len = target.getTotalLength(); } catch (e) { /* unsupported */ }
+        if (len > 0) {
+          const n = Math.max(8, Math.min(900, Math.ceil(len / sampleStep)));
+          let pts = [];
+          for (let k = 0; k <= n; k++) {
+            const p = target.getPointAtLength((len * k) / n);
+            const x = ctm ? ctm.a * p.x + ctm.c * p.y + ctm.e : p.x;
+            const y = ctm ? ctm.b * p.x + ctm.d * p.y + ctm.f : p.y;
+            pts.push({ x, y });
+          }
+          pts = simplifyDP(pts, vbDiag / 1500);
+          if (pts.length >= 2) polylines.push({ pts, colorIdx: nearestColor(outlineRgb) });
+        }
+        if (temp) temp.remove();
+      }
+    }
+
+    if (!polylines.length) throw new Error("No drawable geometry found in SVG");
+
+    // bbox in viewBox units
+    let mnx = Infinity, mny = Infinity, mxx = -Infinity, mxy = -Infinity;
+    for (const pl of polylines) for (const p of pl.pts) {
+      if (p.x < mnx) mnx = p.x; if (p.x > mxx) mxx = p.x;
+      if (p.y < mny) mny = p.y; if (p.y > mxy) mxy = p.y;
+    }
+    const w = Math.max(mxx - mnx, 1e-6), h = Math.max(mxy - mny, 1e-6);
+    for (const pl of polylines) for (const p of pl.pts) { p.x -= mnx; p.y -= mny; }
+
+    const d0 = pageDims();
+    const targetW = d0.width * 0.25;
+    const scale = targetW / Math.max(w, h);
+    const st = {
+      id: idSeq++, name,
+      src: text, srcOffset: { x: mnx, y: mny }, // for raster-hatch mapping
+      vb: { x: vb.x, y: vb.y, w: vb.width, h: vb.height },
+      paths: polylines.map((pl) => pl.pts),
+      pathColors: polylines.map((pl) => pl.colorIdx),
+      w, h,
+      cx: d0.width / 2, cy: d0.height / 2,
+      scale, rotation: 0,
+      tool: 17, thickness: 2,
+      colMode: "auto", colorOverride: 0,
+      fillMode: hasFillAnywhere ? "both" : "outline",
+      hatchAngle: "45", hatchGap: 7,
+      fills: [], _fillsFresh: !hasFillAnywhere,
+    };
+    return st;
+  } finally {
+    host.remove();
+  }
+}
+
+/* ---------- hatch fills ---------- */
+/* Solid-fill parameters reverse-engineered from commercial sticker packs:
+   horizontal rows 2 page-units apart drawn at thickness_scale ~7.07 (≈9x
+   overlap), fineliner, width 18, pressure 255, speed 0. Rows fuse solid. */
+const SOLID = { rowGap: 2, thickness: 7.07, width: 18, pressure: 255, speed: 0, ptStep: 18 };
+function fillGapLocal(st) {
+  const gapPage = st.fillMode === "solid" ? SOLID.rowGap : st.hatchGap;
+  return gapPage / Math.max(st.scale, 1e-9);
+}
+function fillAngles(st) {
+  if (st.fillMode === "solid") return [0];
+  return st.hatchAngle === "cross" ? [45, 135] : [parseFloat(st.hatchAngle)];
+}
+
+/* Raster-based hatch for SVG stickers: handles curves, holes, occlusion.
+   Produces segments in sticker-local units, grouped by palette index. */
+function rasterHatch(st) {
+  return new Promise((resolve, reject) => {
+    const doc = new DOMParser().parseFromString(st.src, "image/svg+xml");
+    const svg = doc.documentElement;
+    if (!svg.getAttribute("viewBox")) svg.setAttribute("viewBox", `${st.vb.x} ${st.vb.y} ${st.vb.w} ${st.vb.h}`);
+    const RES = 900;
+    const pxScale = RES / Math.max(st.vb.w, st.vb.h);
+    svg.setAttribute("width", Math.round(st.vb.w * pxScale));
+    svg.setAttribute("height", Math.round(st.vb.h * pxScale));
+    const blob = new Blob([new XMLSerializer().serializeToString(svg)], { type: "image/svg+xml" });
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      try {
+        const angles = fillAngles(st);
+        // spacing in page units at current scale -> local units
+        const gapLocal = fillGapLocal(st);
+        const segs = [];
+        for (const ang of angles) {
+          const th = (ang * Math.PI) / 180;
+          const cs = Math.cos(th), sn = Math.sin(th);
+          const iw = img.width, ih = img.height;
+          const cw = Math.ceil(Math.abs(iw * cs) + Math.abs(ih * sn));
+          const ch = Math.ceil(Math.abs(iw * sn) + Math.abs(ih * cs));
+          const can = document.createElement("canvas");
+          can.width = cw; can.height = ch;
+          const ctx = can.getContext("2d", { willReadFrequently: true });
+          ctx.translate(cw / 2, ch / 2);
+          ctx.rotate(-th);
+          ctx.drawImage(img, -iw / 2, -ih / 2);
+          const data = ctx.getImageData(0, 0, cw, ch).data;
+          const gapPx = Math.max(2, gapLocal * pxScale);
+          // map rotated-canvas px -> local units
+          const toLocal = (px, py) => {
+            const dx = px - cw / 2, dy = py - ch / 2;
+            const rx = dx * cs - dy * sn, ry = dx * sn + dy * cs; // rotate back by +th
+            // raster px -> viewport space (same space as sampled outlines,
+            // since the sampling SVG is normalised to viewBox size)
+            return {
+              x: (rx + iw / 2) / pxScale - st.srcOffset.x,
+              y: (ry + ih / 2) / pxScale - st.srcOffset.y,
+            };
+          };
+          for (let y = Math.floor(gapPx / 2); y < ch; y += gapPx) {
+            const yy = Math.round(y);
+            let runStart = -1, runColor = -1;
+            for (let x = 0; x <= cw; x++) {
+              let cIdx = -1;
+              if (x < cw) {
+                const o = (yy * cw + x) * 4;
+                if (data[o + 3] > 120) cIdx = nearestColor([data[o], data[o + 1], data[o + 2]]);
+              }
+              if (cIdx !== runColor) {
+                if (runColor >= 0 && x - runStart >= gapPx * 0.6) {
+                  const a = toLocal(runStart + 0.5, yy), b = toLocal(x - 0.5, yy);
+                  segs.push({ x1: a.x, y1: a.y, x2: b.x, y2: b.y, c: runColor });
+                }
+                runStart = x; runColor = cIdx;
+              }
+            }
+          }
+        }
+        resolve(segs);
+      } catch (e) { reject(e); }
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Could not rasterise SVG")); };
+    img.src = url;
+  });
+}
+
+/* Geometric scanline hatch for stickers without SVG source (test star). */
+function polygonHatch(st) {
+  const angles = fillAngles(st);
+  const gapLocal = fillGapLocal(st);
+  const segs = [];
+  const polys = st.paths.filter((p) => p.length > 2);
+  for (const ang of angles) {
+    const th = (ang * Math.PI) / 180;
+    const cs = Math.cos(th), sn = Math.sin(th);
+    const rot = (p) => ({ x: p.x * cs + p.y * sn, y: -p.x * sn + p.y * cs });
+    const unrot = (p) => ({ x: p.x * cs - p.y * sn, y: p.x * sn + p.y * cs });
+    const rp = polys.map((poly) => poly.map(rot));
+    let mny = Infinity, mxy = -Infinity;
+    for (const poly of rp) for (const p of poly) { if (p.y < mny) mny = p.y; if (p.y > mxy) mxy = p.y; }
+    for (let y = mny + gapLocal / 2; y < mxy; y += gapLocal) {
+      const xs = [];
+      for (const poly of rp) {
+        for (let i = 0; i < poly.length - 1; i++) {
+          const a = poly[i], b = poly[i + 1];
+          if ((a.y <= y && b.y > y) || (b.y <= y && a.y > y)) {
+            xs.push(a.x + ((y - a.y) / (b.y - a.y)) * (b.x - a.x));
+          }
+        }
+      }
+      xs.sort((p, q) => p - q);
+      for (let i = 0; i + 1 < xs.length; i += 2) {
+        if (xs[i + 1] - xs[i] < gapLocal * 0.3) continue;
+        const a = unrot({ x: xs[i], y }), b = unrot({ x: xs[i + 1], y });
+        segs.push({ x1: a.x, y1: a.y, x2: b.x, y2: b.y, c: st.pathColors[0] || 0 });
+      }
+    }
+  }
+  return segs;
+}
+
+let regenTimer = null;
+function markFillsDirty(st) {
+  if (st.fillMode === "outline") { st._fillsFresh = true; return; }
+  st._fillsFresh = false;
+  clearTimeout(regenTimer);
+  regenTimer = setTimeout(() => regenAllDirty().then(render), 350);
+}
+async function regenAllDirty() {
+  for (const pg of state.pages) {
+    for (const st of pg.stickers) {
+      if (st._fillsFresh || st.fillMode === "outline") continue;
+      try {
+        st.fills = st.src ? await rasterHatch(st) : polygonHatch(st);
+        st._fillsFresh = true;
+      } catch (e) {
+        log(`Fill generation failed for "${st.name}": ${e.message}`, true);
+        st.fills = []; st._fillsFresh = true;
+      }
+    }
+  }
+  updateInk();
+}
+
+/* ---------- PDF hybrid ---------- */
+let _pdfDoc = null, _pdfBitmaps = {}, _pdfRendering = {}, _pdfjsPromise = null;
+
+function loadPdfJs() {
+  if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+  if (!_pdfjsPromise) _pdfjsPromise = new Promise((res, rej) => {
+    const s = document.createElement("script");
+    s.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+    s.onload = () => {
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+        "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+      res(window.pdfjsLib);
+    };
+    s.onerror = () => { _pdfjsPromise = null; rej(new Error("could not load the PDF renderer — internet needed the first time")); };
+    document.head.appendChild(s);
+  });
+  return _pdfjsPromise;
+}
+
+function b64FromBytes(bytes) {
+  let s = "";
+  for (let i = 0; i < bytes.length; i += 0x8000)
+    s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+function bytesFromB64(b64) {
+  const s = atob(b64);
+  const b = new Uint8Array(s.length);
+  for (let i = 0; i < s.length; i++) b[i] = s.charCodeAt(i);
+  return b;
+}
+
+async function ensurePdfDoc() {
+  if (_pdfDoc || !state.pdf) return _pdfDoc;
+  const lib = await loadPdfJs();
+  _pdfDoc = await lib.getDocument({ data: state.pdf.bytes.slice() }).promise;
+  return _pdfDoc;
+}
+
+function pdfBitmap(idx) {
+  if (_pdfBitmaps[idx]) return _pdfBitmaps[idx];
+  if (_pdfRendering[idx]) return null;
+  _pdfRendering[idx] = true;
+  (async () => {
+    try {
+      const doc = await ensurePdfDoc();
+      const pg = await doc.getPage(idx + 1);
+      const v0 = pg.getViewport({ scale: 1 });
+      const v = pg.getViewport({ scale: 1100 / v0.width });
+      const c = document.createElement("canvas");
+      c.width = Math.round(v.width); c.height = Math.round(v.height);
+      await pg.render({ canvasContext: c.getContext("2d"), viewport: v }).promise;
+      _pdfBitmaps[idx] = c;
+      render();
+    } catch (e) {
+      log("PDF preview failed: " + e.message, true);
+    } finally { _pdfRendering[idx] = false; }
+  })();
+  return null;
+}
+
+async function importPdf(f) {
+  log(`Loading PDF "${f.name}"…`);
+  const lib = await loadPdfJs();
+  const bytes = new Uint8Array(await f.arrayBuffer());
+  const doc = await lib.getDocument({ data: bytes.slice() }).promise;
+  const sizes = [];
+  for (let i = 1; i <= doc.numPages; i++) {
+    const v = (await doc.getPage(i)).getViewport({ scale: 1 });
+    sizes.push({ w: v.width, h: v.height });
+  }
+  snapshot();
+  const pdfName = f.name.replace(/\.pdf$/i, "");
+  _pdfLibrary[pdfName] = { bytes, pageSizes: sizes };
+  state.pdf = { name: pdfName, bytes, pageSizes: sizes };
+  _pdfDoc = doc; _pdfBitmaps = {}; _pdfRendering = {};
+  // rebuild pages 1:1 with the PDF; carry existing stickers across by index
+  const old = state.pages;
+  state.pages = sizes.map((_, i) => ({ stickers: [], pdfPage: i }));
+  old.forEach((p, i) => {
+    const t = Math.min(i, sizes.length - 1);
+    state.pages[t].stickers.push(...p.stickers);
+  });
+  state.cur = 0; state.selected = null;
+  if ($("docName").value === "Sticker Sheet") $("docName").value = state.pdf.name;
+  refreshAll();
+  log(`PDF loaded: ${doc.numPages} page(s). Place stickers on any page, then export.`);
+}
+
+function removePdf() {
+  if (!state.pdf) return;
+  snapshot();
+  state.pdf = null; _pdfDoc = null; _pdfBitmaps = {}; _pdfRendering = {};
+  for (const p of state.pages) delete p.pdfPage;
+  refreshAll();
+  log("PDF removed — back to plain notebook export.");
+}
+
+/* ---------- test star ---------- */
+function addTestStar() {
+  snapshot();
+  const pts = [];
+  const R = 100, r = 42;
+  for (let i = 0; i <= 10; i++) {
+    const a = (i * Math.PI) / 5 - Math.PI / 2;
+    const rad = i % 2 === 0 ? R : r;
+    pts.push({ x: 100 + rad * Math.cos(a), y: 100 + rad * Math.sin(a) });
+  }
+  for (const p of pts) { p.x -= 0; p.y -= 0; }
+  const d0 = pageDims();
+  const st = {
+    id: idSeq++, name: "Test star",
+    src: null, vb: null, srcOffset: { x: 0, y: 0 },
+    paths: [pts], pathColors: [6 /* blue */],
+    w: 200, h: 200,
+    cx: d0.width / 2, cy: d0.height / 2,
+    scale: (d0.width * 0.22) / 200, rotation: 0,
+    tool: 17, thickness: 2,
+    colMode: "auto", colorOverride: 0,
+    fillMode: "both", hatchAngle: "45", hatchGap: 8,
+    fills: [], _fillsFresh: false,
+  };
+  page().stickers.push(st);
+  state.selected = st.id;
+  markFillsDirty(st);
+  refreshAll();
+  log("Test star added — export and check it imports as selectable ink.");
+}
+
+/* ---------- canvas ---------- */
+const cv = $("cv"), cx2d = cv.getContext("2d");
+let cScale = 1; // canvas px per page unit (CSS px basis)
+
+function layoutCanvas() {
+  const wrap = $("canvasWrap");
+  const d0 = pageDims();
+  const availW = wrap.clientWidth - 28, availH = wrap.clientHeight - 28;
+  const s = Math.min(availW / d0.width, availH / d0.height);
+  cScale = s;
+  const dpr = window.devicePixelRatio || 1;
+  cv.style.width = d0.width * s + "px";
+  cv.style.height = d0.height * s + "px";
+  cv.width = Math.round(d0.width * s * dpr);
+  cv.height = Math.round(d0.height * s * dpr);
+  cx2d.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+
+function tf(st, p) { // local -> page
+  const th = (st.rotation * Math.PI) / 180;
+  const cs = Math.cos(th), sn = Math.sin(th);
+  const x = (p.x - st.w / 2) * st.scale, y = (p.y - st.h / 2) * st.scale;
+  return { x: st.cx + x * cs - y * sn, y: st.cy + x * sn + y * cs };
+}
+function invTf(st, p) { // page -> local
+  const th = (st.rotation * Math.PI) / 180;
+  const cs = Math.cos(th), sn = Math.sin(th);
+  const dx = p.x - st.cx, dy = p.y - st.cy;
+  const x = dx * cs + dy * sn, y = -dx * sn + dy * cs;
+  return { x: x / st.scale + st.w / 2, y: y / st.scale + st.h / 2 };
+}
+
+function strokeColorIdx(st, pathIdx) {
+  return st.colMode === "override" ? st.colorOverride : st.pathColors[pathIdx] ?? 0;
+}
+function fillColorIdx(st, seg) {
+  return st.colMode === "override" ? st.colorOverride : seg.c;
+}
+/* On greyscale devices (rM2, Paper Pure) map every colour to black/grey/white
+   by luminance, so previews and exports are honest about what the tablet shows. */
+function deviceColorIdx(i) {
+  if (dev().color) return i;
+  if (PALETTE[i].id === 2) return 2; // white stays white
+  const [r, g, b] = PALETTE[i].rgb;
+  const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+  return lum < 110 ? 0 : lum < 200 ? 1 : 2; // black / gray / white
+}
+const inkCss = (i) => palCss(deviceColorIdx(i));
+
+function render() {
+  const d0 = pageDims();
+  cx2d.save();
+  cx2d.clearRect(0, 0, cv.width, cv.height);
+  cx2d.scale(cScale, cScale);
+  cx2d.fillStyle = "#fff";
+  cx2d.fillRect(0, 0, d0.width, d0.height);
+  if (state.pdf) {
+    const bm = pdfBitmap(page().pdfPage || 0);
+    if (bm) cx2d.drawImage(bm, 0, 0, d0.width, d0.height);
+  }
+  cx2d.lineCap = "round"; cx2d.lineJoin = "round";
+
+  for (const st of page().stickers) {
+    // fills
+    if (st.fillMode !== "outline") {
+      cx2d.lineWidth = Math.max(0.8, (st.fillMode === "solid" ? SOLID.thickness : st.thickness) * 1.6);
+      for (const sg of st.fills) {
+        const a = tf(st, { x: sg.x1, y: sg.y1 }), b = tf(st, { x: sg.x2, y: sg.y2 });
+        cx2d.strokeStyle = inkCss(fillColorIdx(st, sg));
+        cx2d.beginPath(); cx2d.moveTo(a.x, a.y); cx2d.lineTo(b.x, b.y); cx2d.stroke();
+      }
+      if (!st._fillsFresh) {
+        cx2d.fillStyle = "rgba(0,0,0,.4)"; cx2d.font = "italic 28px sans-serif";
+        const c = tf(st, { x: st.w / 2, y: st.h / 2 });
+        cx2d.fillText("updating fill…", c.x - 80, c.y);
+      }
+    }
+    // outlines
+    if (st.fillMode !== "hatch") {
+      cx2d.lineWidth = Math.max(1, st.thickness * 1.9);
+      st.paths.forEach((pts, i) => {
+        cx2d.strokeStyle = inkCss(strokeColorIdx(st, i));
+        cx2d.beginPath();
+        const p0 = tf(st, pts[0]);
+        cx2d.moveTo(p0.x, p0.y);
+        for (let k = 1; k < pts.length; k++) { const p = tf(st, pts[k]); cx2d.lineTo(p.x, p.y); }
+        cx2d.stroke();
+      });
+    }
+  }
+
+  // selection chrome
+  const s = sel();
+  if (s) {
+    const corners = [
+      tf(s, { x: 0, y: 0 }), tf(s, { x: s.w, y: 0 }),
+      tf(s, { x: s.w, y: s.h }), tf(s, { x: 0, y: s.h }),
+    ];
+    cx2d.strokeStyle = "#5ec8b0"; cx2d.lineWidth = 1.5 / cScale * 1.5;
+    cx2d.setLineDash([6 / cScale, 5 / cScale]);
+    cx2d.beginPath();
+    cx2d.moveTo(corners[0].x, corners[0].y);
+    for (let i = 1; i <= 4; i++) cx2d.lineTo(corners[i % 4].x, corners[i % 4].y);
+    cx2d.stroke();
+    cx2d.setLineDash([]);
+    // scale handle (bottom-right corner)
+    const hs = 9 / cScale;
+    cx2d.fillStyle = "#5ec8b0";
+    cx2d.fillRect(corners[2].x - hs / 2, corners[2].y - hs / 2, hs, hs);
+    // rotate handle above top-centre
+    const tc = tf(s, { x: s.w / 2, y: 0 });
+    const up = rotHandlePos(s);
+    cx2d.beginPath(); cx2d.moveTo(tc.x, tc.y); cx2d.lineTo(up.x, up.y); cx2d.stroke();
+    cx2d.beginPath(); cx2d.arc(up.x, up.y, 6 / cScale, 0, Math.PI * 2); cx2d.fill();
+  }
+  cx2d.restore();
+  $("emptyMsg").style.display = state.pages.some((p) => p.stickers.length) ? "none" : "flex";
+  scheduleAutosave(); // debounced; fires once interaction settles
+}
+function rotHandlePos(s) {
+  const tc = tf(s, { x: s.w / 2, y: 0 });
+  const c = { x: s.cx, y: s.cy };
+  const dx = tc.x - c.x, dy = tc.y - c.y;
+  const dl = Math.hypot(dx, dy) || 1;
+  const off = 28 / cScale;
+  return { x: tc.x + (dx / dl) * off, y: tc.y + (dy / dl) * off };
+}
+
+/* ---------- pointer interaction ---------- */
+let drag = null;
+function evtPage(e) {
+  const r = cv.getBoundingClientRect();
+  return { x: (e.clientX - r.left) / cScale, y: (e.clientY - r.top) / cScale };
+}
+cv.addEventListener("pointerdown", (e) => {
+  const p = evtPage(e);
+  const s = sel();
+  if (s) {
+    const rp = rotHandlePos(s);
+    if (Math.hypot(p.x - rp.x, p.y - rp.y) < 12 / cScale) {
+      snapshot();
+      drag = { mode: "rotate", st: s, startAng: Math.atan2(p.y - s.cy, p.x - s.cx), startRot: s.rotation };
+      cv.setPointerCapture(e.pointerId); return;
+    }
+    const br = tf(s, { x: s.w, y: s.h });
+    if (Math.hypot(p.x - br.x, p.y - br.y) < 12 / cScale) {
+      snapshot();
+      drag = { mode: "scale", st: s, startDist: Math.hypot(p.x - s.cx, p.y - s.cy), startScale: s.scale };
+      cv.setPointerCapture(e.pointerId); return;
+    }
+  }
+  // hit test topmost
+  const stks = page().stickers;
+  for (let i = stks.length - 1; i >= 0; i--) {
+    const st = stks[i];
+    const lp = invTf(st, p);
+    const m = 8 / cScale / st.scale;
+    if (lp.x >= -m && lp.x <= st.w + m && lp.y >= -m && lp.y <= st.h + m) {
+      state.selected = st.id;
+      snapshot();
+      drag = { mode: "move", st, dx: p.x - st.cx, dy: p.y - st.cy };
+      cv.setPointerCapture(e.pointerId);
+      refreshSide(); render();
+      return;
+    }
+  }
+  state.selected = null;
+  refreshSide(); render();
+});
+cv.addEventListener("pointermove", (e) => {
+  if (!drag) return;
+  const p = evtPage(e);
+  const st = drag.st;
+  if (drag.mode === "move") { st.cx = p.x - drag.dx; st.cy = p.y - drag.dy; }
+  else if (drag.mode === "scale") {
+    const d = Math.hypot(p.x - st.cx, p.y - st.cy);
+    st.scale = Math.max(0.01, (drag.startScale * d) / Math.max(drag.startDist, 1e-6));
+  } else if (drag.mode === "rotate") {
+    const a = Math.atan2(p.y - st.cy, p.x - st.cx);
+    st.rotation = Math.round(drag.startRot + ((a - drag.startAng) * 180) / Math.PI);
+    if (st.rotation > 180) st.rotation -= 360;
+    if (st.rotation < -180) st.rotation += 360;
+  }
+  render();
+});
+cv.addEventListener("pointerup", () => {
+  if (drag && drag.mode === "scale") markFillsDirty(drag.st);
+  if (drag) { refreshSide(); updateInk(); }
+  drag = null;
+});
+
+document.addEventListener("keydown", (e) => {
+  if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT" || e.target.tagName === "TEXTAREA") return;
+  const s = sel();
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "y") { e.preventDefault(); redo(); return; }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "d") { e.preventDefault(); duplicateSel(); return; }
+  if (!s) return;
+  const step = e.shiftKey ? 20 : 4;
+  if (e.key === "Delete" || e.key === "Backspace") { deleteSel(); }
+  else if (e.key === "ArrowLeft") { s.cx -= step; render(); }
+  else if (e.key === "ArrowRight") { s.cx += step; render(); }
+  else if (e.key === "ArrowUp") { s.cy -= step; render(); }
+  else if (e.key === "ArrowDown") { s.cy += step; render(); }
+});
+
+/* ---------- sticker ops ---------- */
+function duplicateSel() {
+  const s = sel(); if (!s) return;
+  snapshot();
+  const copy = JSON.parse(JSON.stringify(s)); // deep copy: independent hatch data
+  copy.id = idSeq++;
+  copy.name = s.name + " copy";
+  copy.cx += 40; copy.cy += 40;
+  page().stickers.push(copy);
+  state.selected = copy.id;
+  refreshAll();
+}
+function deleteSel() {
+  const s = sel(); if (!s) return;
+  snapshot();
+  page().stickers = page().stickers.filter((x) => x.id !== s.id);
+  state.selected = null;
+  refreshAll();
+}
+
+/* ---------- side panel ---------- */
+function refreshSide() {
+  // pages
+  const pgEl = $("pages"); pgEl.innerHTML = "";
+  state.pages.forEach((p, i) => {
+    const b = document.createElement("div");
+    b.className = "pageTab" + (i === state.cur ? " cur" : "");
+    b.textContent = `Page ${i + 1}`;
+    b.onclick = () => { state.cur = i; state.selected = null; refreshAll(); };
+    pgEl.appendChild(b);
+  });
+  if (!state.pdf) {
+    const add = document.createElement("button"); add.className = "small"; add.textContent = "+";
+    add.title = "Add page";
+    add.onclick = () => { snapshot(); state.pages.push({ stickers: [] }); state.cur = state.pages.length - 1; state.selected = null; refreshAll(); };
+    pgEl.appendChild(add);
+    if (state.pages.length > 1) {
+      const del = document.createElement("button"); del.className = "small"; del.textContent = "− page";
+      del.title = "Delete current page";
+      del.onclick = () => { snapshot(); state.pages.splice(state.cur, 1); state.cur = Math.max(0, state.cur - 1); state.selected = null; refreshAll(); };
+      pgEl.appendChild(del);
+    }
+  }
+  $("pdfBanner").style.display = state.pdf ? "" : "none";
+  if (state.pdf) $("pdfInfo").textContent = `${state.pdf.name}.pdf — ${state.pdf.pageSizes.length} page(s)`;
+
+  // sticker list
+  const list = $("stickerList"); list.innerHTML = "";
+  for (const st of page().stickers) {
+    const row = document.createElement("div");
+    row.className = "stkRow" + (st.id === state.selected ? " sel" : "");
+    const swatch = document.createElement("div");
+    swatch.className = "sw"; swatch.style.width = "14px"; swatch.style.height = "14px";
+    swatch.style.background = inkCss(st.colMode === "override" ? st.colorOverride : (st.pathColors[0] ?? 0));
+    const nm = document.createElement("span"); nm.className = "nm"; nm.textContent = st.name;
+    row.append(swatch, nm);
+    row.onclick = () => { state.selected = st.id; refreshSide(); render(); };
+    list.appendChild(row);
+  }
+  $("dupBtn").disabled = $("delBtn").disabled = $("fitBtn").disabled = !sel();
+
+  // style box
+  const s = sel();
+  $("styleBox").style.display = s ? "" : "none";
+  if (s) {
+    $("penSel").value = s.tool;
+    $("thick").value = s.thickness;
+    $("size").value = Math.round((s.scale * Math.max(s.w, s.h) / pageDims().width) * 100);
+    $("rot").value = s.rotation;
+    $("fillMode").value = s.fillMode;
+    $("hatchAngle").value = s.hatchAngle;
+    $("hatchGap").value = s.hatchGap;
+    $("colMode").value = s.colMode;
+    renderSwatches();
+  }
+  $("devSel").value = state.device;
+  $("writingLayer").checked = !!state.writingLayer;
+  updateUndoButtons();
+}
+function renderSwatches() {
+  const s = sel(); const el = $("swatches"); el.innerHTML = "";
+  if (!s || s.colMode !== "override") { el.style.display = "none"; return; }
+  el.style.display = "flex";
+  PALETTE.forEach((c, i) => {
+    if (!dev().color && i > 2) return; // mono devices: black/grey/white only
+    const d = document.createElement("div");
+    d.className = "sw" + (s.colorOverride === i ? " sel" : "");
+    d.style.background = palCss(i);
+    d.title = c.name;
+    d.onclick = () => { snapshot(); s.colorOverride = i; refreshSide(); render(); };
+    el.appendChild(d);
+  });
+}
+function refreshAll() { layoutCanvas(); refreshSide(); render(); updateInk(); }
+
+/* ---------- controls wiring ---------- */
+PENS.forEach((p) => {
+  const o = document.createElement("option"); o.value = p.id; o.textContent = p.name;
+  $("penSel").appendChild(o);
+});
+function bindCtl(id, fn, regen) {
+  let gesture = false;
+  $(id).addEventListener("input", () => {
+    const s = sel(); if (!s) return;
+    if (!gesture) { snapshot(); gesture = true; } // capture pre-change state once per gesture
+    fn(s, $(id).value);
+    if (regen) markFillsDirty(s);
+    render(); updateInk();
+  });
+  $(id).addEventListener("change", () => { gesture = false; });
+}
+bindCtl("penSel", (s, v) => { s.tool = +v; });
+bindCtl("thick", (s, v) => { s.thickness = +v; });
+bindCtl("size", (s, v) => { s.scale = (pageDims().width * (+v / 100)) / Math.max(s.w, s.h); }, true);
+bindCtl("rot", (s, v) => { s.rotation = +v; });
+bindCtl("fillMode", (s, v) => { s.fillMode = v; }, true);
+bindCtl("hatchAngle", (s, v) => { s.hatchAngle = v; }, true);
+bindCtl("hatchGap", (s, v) => { s.hatchGap = +v; }, true);
+bindCtl("colMode", (s, v) => { s.colMode = v; renderSwatches(); });
+
+$("pdfRemoveBtn").onclick = removePdf;
+$("dupBtn").onclick = duplicateSel;
+$("delBtn").onclick = deleteSel;
+$("fitBtn").onclick = () => {
+  const s = sel(); if (!s) return;
+  snapshot();
+  fitStickerToPage(s);
+  markFillsDirty(s);
+  refreshSide(); render(); updateInk();
+};
+$("starBtn").onclick = addTestStar;
+$("undoBtn").onclick = undo;
+$("redoBtn").onclick = redo;
+$("devSel").onchange = () => switchDevice($("devSel").value);
+$("writingLayer").onchange = () => { state.writingLayer = $("writingLayer").checked; scheduleAutosave(); };
+function switchDevice(d) {
+  if (state.device === d) return;
+  snapshot();
+  const od = dev();
+  state.device = d;
+  const nd = dev();
+  if (!state.pdf) {
+    // notebook mode: positions are in device units, so rescale them.
+    // (PDF mode positions live in PDF-page space — device only affects colours.)
+    const fx = nd.width / od.width, fy = nd.height / od.height;
+    for (const pg of state.pages) for (const st of pg.stickers) {
+      st.cx *= fx; st.cy *= fy; st.scale *= fx;
+    }
+  }
+  refreshAll();
+}
+
+/* ---------- import ---------- */
+$("drop").onclick = () => $("file").click();
+$("file").onchange = () => importFiles($("file").files);
+for (const tgt of [document.body]) {
+  tgt.addEventListener("dragover", (e) => { e.preventDefault(); $("drop").classList.add("over"); });
+  tgt.addEventListener("dragleave", () => $("drop").classList.remove("over"));
+  tgt.addEventListener("drop", (e) => {
+    e.preventDefault(); $("drop").classList.remove("over");
+    importFiles(e.dataTransfer.files);
+  });
+}
+function fitStickerToPage(st) {
+  const d0 = pageDims();
+  st.scale = Math.min(d0.width / st.w, d0.height / st.h);
+  st.cx = d0.width / 2; st.cy = d0.height / 2;
+  st.rotation = 0;
+}
+
+async function importFiles(files) {
+  let n = 0;
+  const asPage = $("importMode").value === "page" && !state.pdf;
+  for (const f of files) {
+    if (/\.pdf$/i.test(f.name) || f.type === "application/pdf") {
+      try { await importPdf(f); } catch (e) { log(`PDF import failed: ${e.message}`, true); }
+      continue;
+    }
+    if (!/\.svg$/i.test(f.name) && f.type !== "image/svg+xml") {
+      if (/\.(png|jpe?g)$/i.test(f.name)) log(`"${f.name}": for PNG/JPG just use reMarkable's own image insert (firmware 3.27+), or convert to SVG for ink.`, true);
+      else log(`"${f.name}": not an SVG, skipped.`, true);
+      continue;
+    }
+    try {
+      const text = await f.text();
+      const st = await buildStickerFromSvg(text, f.name.replace(/\.svg$/i, ""));
+      if (n === 0) snapshot();
+      if (asPage) {
+        // each file becomes its own page; reuse the current page if it's empty
+        if (!(n === 0 && page().stickers.length === 0)) {
+          state.pages.splice(state.cur + 1, 0, { stickers: [] });
+          state.cur++;
+        }
+        fitStickerToPage(st);
+      } else {
+        st.cx += n * 36; st.cy += n * 36;
+      }
+      page().stickers.push(st);
+      state.selected = st.id;
+      markFillsDirty(st);
+      n++;
+      log(`Imported "${st.name}"${asPage ? ` as page ${state.cur + 1}` : ""}: ${st.paths.length} stroke path(s).`);
+    } catch (err) {
+      log(`Failed to import "${f.name}": ${err.message}`, true);
+    }
+  }
+  $("file").value = "";
+  if (n) refreshAll();
+}
+
+/* ---------- export ---------- */
+function stickerStrokes(st, dims) {
+  const strokes = [];
+  const d0 = dims || pageDims();
+  const halfW = d0.width / 2;
+  const eps = 0.35; // page units, after transform
+  const ptWidth = Math.max(2, Math.round(st.thickness * 5.5));
+  const mkPoint = (p) => ({
+    x: p.x - halfW, y: p.y,
+    speed: 4, width: ptWidth, direction: 0, pressure: 204,
+  });
+  if (st.fillMode !== "hatch") {
+    st.paths.forEach((pts, i) => {
+      let tp = pts.map((p) => tf(st, p));
+      tp = simplifyDP(tp, eps);
+      if (tp.length < 2) {
+        if (tp.length === 1) tp = [tp[0], { x: tp[0].x + 0.4, y: tp[0].y }];
+        else return;
+      }
+      strokes.push({
+        tool: st.tool, color: PALETTE[deviceColorIdx(strokeColorIdx(st, i))].id,
+        thicknessScale: st.thickness, points: tp.map(mkPoint),
+      });
+    });
+  }
+  if (st.fillMode !== "outline") {
+    const solid = st.fillMode === "solid";
+    for (const sg of st.fills) {
+      const a = tf(st, { x: sg.x1, y: sg.y1 }), b = tf(st, { x: sg.x2, y: sg.y2 });
+      const len = Math.hypot(b.x - a.x, b.y - a.y);
+      if (len < 0.8) continue;
+      let pts;
+      if (solid) {
+        // commercial packs place interior points every ~18 units along each row
+        const n = Math.max(1, Math.round(len / SOLID.ptStep));
+        pts = [];
+        for (let k = 0; k <= n; k++)
+          pts.push({
+            x: a.x + ((b.x - a.x) * k) / n - halfW, y: a.y + ((b.y - a.y) * k) / n,
+            speed: SOLID.speed, width: SOLID.width, direction: 0, pressure: SOLID.pressure,
+          });
+      } else {
+        pts = [mkPoint(a), mkPoint(b)];
+      }
+      strokes.push({
+        tool: solid ? 17 : st.tool,
+        color: PALETTE[deviceColorIdx(fillColorIdx(st, sg))].id,
+        thicknessScale: solid ? SOLID.thickness : st.thickness,
+        points: pts,
+      });
+    }
+  }
+  return strokes;
+}
+
+function countPoints() {
+  let n = 0;
+  for (const pg of state.pages) for (const st of pg.stickers) {
+    for (const p of st.paths) n += Math.max(2, Math.ceil(p.length * 0.6));
+    if (st.fillMode !== "outline") n += st.fills.length * (st.fillMode === "solid" ? 5 : 2);
+  }
+  return n;
+}
+function updateInk() {
+  // Commercial packs run ~470k points/page, so the device tolerates a lot;
+  // thresholds are about sync/lasso snappiness, not hard limits.
+  const n = countPoints();
+  const pct = Math.min(100, (n / 200000) * 100);
+  $("inkFill").style.width = pct + "%";
+  $("inkFill").style.background = n > 120000 ? "var(--bad)" : n > 50000 ? "var(--warn)" : "var(--acc)";
+  $("inkTxt").textContent = n >= 1000 ? (n / 1000).toFixed(1) + "k pts" : n + " pts";
+}
+
+async function buildCurrentRmdoc() {
+  await regenAllDirty();
+  const name = ($("docName").value || "Sticker Sheet").trim();
+  let pages;
+  if (state.pdf) {
+    // PDF hybrid: keep ALL pages (1:1 with the PDF); empty pages carry no ink
+    pages = state.pages.map((p, i) => ({
+      strokes: p.stickers.flatMap((st) => stickerStrokes(st, pageDims(i))),
+      pdfPage: p.pdfPage != null ? p.pdfPage : i,
+    }));
+  } else {
+    pages = state.pages
+      .filter((p) => p.stickers.length)
+      .map((p) => ({ strokes: p.stickers.flatMap((st) => stickerStrokes(st)) }));
+  }
+  const { bytes } = RMW.buildRmdoc(pages, {
+    visibleName: name, device: state.device,
+    layers: state.writingLayer ? ["Template", "Writing"] : undefined,
+    pdf: state.pdf ? { bytes: state.pdf.bytes } : undefined,
+  });
+  return { bytes, name, pages };
+}
+
+$("exportBtn").onclick = async () => {
+  const total = state.pages.reduce((a, p) => a + p.stickers.length, 0);
+  if (!total) { log("Nothing to export — add a sticker first.", true); return; }
+  $("exportBtn").disabled = true; $("exportBtn").textContent = "Exporting…";
+  try {
+    const { bytes, name, pages } = await buildCurrentRmdoc();
+    const blob = new Blob([bytes], { type: "application/zip" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = name.replace(/[^\w\- ]+/g, "").replace(/\s+/g, "_") + ".rmdoc";
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    const strokeCount = pages.reduce((a, p) => a + p.strokes.length, 0);
+    log(`Exported ${pages.length} page(s), ${strokeCount} strokes (${(bytes.length / 1024).toFixed(0)} KB). ` +
+        `Sideload via reMarkable desktop app / USB web UI, then try the lasso tool.`);
+  } catch (e) {
+    log("Export failed: " + e.message, true);
+    console.error(e);
+  } finally {
+    $("exportBtn").disabled = false; $("exportBtn").textContent = "Export .rmdoc";
+  }
+};
+
+/* Send straight to the tablet over USB.
+   Uses the tablet's built-in web interface (http://10.11.99.1). Browsers allow
+   sending the upload but not reading the response (opaque/no-cors), so we
+   can't confirm success — we tell the user to check the tablet. */
+$("sendBtn").onclick = async () => {
+  const total = state.pages.reduce((a, p) => a + p.stickers.length, 0);
+  if (!total) { log("Nothing to send — add a sticker first.", true); return; }
+  $("sendBtn").disabled = true; $("sendBtn").textContent = "Sending…";
+  try {
+    const { bytes, name } = await buildCurrentRmdoc();
+    const fd = new FormData();
+    fd.append("file", new File([bytes], name.replace(/[^\w\- ]+/g, "").replace(/\s+/g, "_") + ".rmdoc",
+      { type: "application/zip" }));
+    await fetch("http://10.11.99.1/upload", { method: "POST", mode: "no-cors", body: fd, signal: AbortSignal.timeout(15000) });
+    log(`Sent "${name}" to the tablet — check My files. (Requires USB cable + ` +
+        `Settings → Storage → "USB web interface" enabled. The browser can't read the tablet's reply, ` +
+        `so if nothing arrived, your firmware may not accept .rmdoc uploads — use Export + drag into the desktop app instead.)`);
+  } catch (e) {
+    log("Could not reach the tablet at 10.11.99.1 — connect via USB and enable Settings → Storage → " +
+        `"USB web interface", then try again. (${e.message})`, true);
+  } finally {
+    $("sendBtn").disabled = false; $("sendBtn").textContent = "→ Tablet";
+  }
+};
+
+/* ---------- project save / load ---------- */
+$("saveBtn").onclick = () => {
+  const data = {
+    app: "sticker-press", version: 3,
+    device: state.device, docName: $("docName").value,
+    pages: state.pages, idSeq,
+    writingLayer: state.writingLayer,
+    pdf: state.pdf
+      ? { name: state.pdf.name, pageSizes: state.pdf.pageSizes, b64: b64FromBytes(state.pdf.bytes) }
+      : null,
+  };
+  const blob = new Blob([JSON.stringify(data)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = ($("docName").value || "sticker-press").replace(/\s+/g, "_") + ".stickerpress.json";
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  log("Project saved.");
+};
+$("newBtn").onclick = () => {
+  if (!confirm("Start a new project? Current work stays in Undo, but the autosave is replaced.")) return;
+  snapshot();
+  state.pages = [{ stickers: [] }];
+  state.cur = 0; state.selected = null;
+  state.pdf = null; _pdfDoc = null; _pdfBitmaps = {}; _pdfRendering = {};
+  $("docName").value = "Sticker Sheet";
+  try { localStorage.removeItem(AUTOSAVE_KEY); } catch (e) {}
+  refreshAll();
+  log("New project started.");
+};
+$("loadBtn").onclick = () => $("projFile").click();
+$("projFile").onchange = async () => {
+  const f = $("projFile").files[0]; if (!f) return;
+  try {
+    const data = JSON.parse(await f.text());
+    if (data.app !== "sticker-press") throw new Error("Not a Sticker Press project file");
+    snapshot();
+    state.device = data.device || "paperpro";
+    state.pages = data.pages;
+    state.cur = 0; state.selected = null;
+    state.writingLayer = !!data.writingLayer;
+    idSeq = data.idSeq || 1000;
+    state.pdf = null; _pdfDoc = null; _pdfBitmaps = {}; _pdfRendering = {};
+    if (data.pdf && data.pdf.b64) {
+      const bytes = bytesFromB64(data.pdf.b64);
+      _pdfLibrary[data.pdf.name] = { bytes, pageSizes: data.pdf.pageSizes };
+      state.pdf = { name: data.pdf.name, bytes, pageSizes: data.pdf.pageSizes };
+    }
+    $("docName").value = data.docName || "Sticker Sheet";
+    for (const p of state.pages) for (const st of p.stickers) st._fillsFresh = !!(st.fills && st.fills.length) || st.fillMode === "outline";
+    refreshAll();
+    log(`Project loaded: ${state.pages.length} page(s).`);
+  } catch (e) { log("Could not load project: " + e.message, true); }
+  $("projFile").value = "";
+};
+
+/* ---------- boot ---------- */
+window.addEventListener("resize", () => { layoutCanvas(); render(); });
+const restored = loadLocal();
+layoutCanvas(); refreshSide(); render(); updateInk(); updateUndoButtons();
+if (restored) log("Restored your autosaved project. Use New project to start fresh.");
+log("Ready. Format writer validated byte-for-byte against rmscene.");
+</script>
+</body>
+</html>
