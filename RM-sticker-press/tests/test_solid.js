@@ -1,7 +1,7 @@
 const fs = require('fs'); const RMW = require('../src/rm_writer.js');
 const src = fs.readFileSync('/tmp/script1.js','utf8');
 function extract(name){const i=src.indexOf(`function ${name}(`);let j=src.indexOf('{',i),d=0;for(;j<src.length;j++){if(src[j]==='{')d++;else if(src[j]==='}'){d--;if(!d)break;}}return src.slice(i,j+1);}
-const PALETTE = RMW.COLORS; let state={device:'paperpro'}; const dev=()=>RMW.DEVICES[state.device];
+const PALETTE = RMW.COLORS; let state={device:'paperpro'}; const dev=()=>RMW.DEVICES[state.device]; const pageDims=()=>dev();
 const SOLID = eval('('+src.match(/const SOLID = (\{[^}]+\})/)[1]+')');
 for (const f of ['simplifyDP','fillAngles','fillGapLocal','polygonHatch','tf','invTf','strokeColorIdx','fillColorIdx','deviceColorIdx','stickerStrokes']) eval(extract(f));
 const pts=[];for(let i=0;i<=10;i++){const a=i*Math.PI/5-Math.PI/2,r=i%2?42:100;pts.push({x:100+r*Math.cos(a),y:100+r*Math.sin(a)});}

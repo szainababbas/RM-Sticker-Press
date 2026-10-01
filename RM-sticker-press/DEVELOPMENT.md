@@ -28,7 +28,7 @@ Requires Node ≥ 18 and Python ≥ 3.10 (with the `packaging` module, usually p
 ```sh
 cd tests
 # extract the app's inline scripts (some tests exercise app functions directly)
-python3 -c "import re; html=open('../index.html').read(); [open(f'/tmp/script{i}.js','w').write(s) for i,s in enumerate(re.findall(r'<script>(.*?)</script>', html, re.S))]"
+python3 extract.py
 
 node test_diff.js      # writer must be BYTE-IDENTICAL to the rmscene reference
 node test_e2e.js       # test-star pipeline: hatch → strokes → .rmdoc → coordinates

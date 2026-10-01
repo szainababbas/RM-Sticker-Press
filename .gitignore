@@ -1,0 +1,5 @@
+# test output
+RM-sticker-press/tests/*.rmdoc
+RM-sticker-press/tests/candidate.rm
+RM-sticker-press/tests/script*.js
+__pycache__/

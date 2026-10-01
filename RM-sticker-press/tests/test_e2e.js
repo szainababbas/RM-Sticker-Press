@@ -18,6 +18,7 @@ function extract(name) {
 const PALETTE = RMW.COLORS;
 let state = { device: 'paperpro' };
 const dev = () => RMW.DEVICES[state.device];
+const pageDims = () => dev(); // no PDF in these tests, so page dims are the device's
 
 eval(extract('simplifyDP'));
 eval(extract('splitSubpaths'));

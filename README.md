@@ -19,8 +19,9 @@ erasable, lasso-able, and they work everywhere, including on top of PDF planners
 1. Download `index.html` (or open the hosted page) in a Chromium browser (Chrome / Edge / Brave).
 2. Drop SVG files onto the page, or click **★ Add test star**.
 3. Arrange, style (pen, thickness, colour, fills), then **Export .rmdoc**.
-4. Import the file via the reMarkable desktop app (drag & drop) or the USB web interface —
-   or use **→ Tablet** to send it straight over USB.
+4. Import the file via the reMarkable desktop app (drag & drop), or the USB web interface on
+   a reMarkable 2 (**→ Tablet** sends it there over USB). The Paper Pro has no web interface:
+   with developer mode on, copy the `.rmdoc` over SSH instead (see below).
 5. On the tablet: lasso a sticker, copy, paste into any notebook.
 
 Pre-made test files are in [`samples/`](samples/) if you want to verify your device first.
@@ -65,8 +66,23 @@ a physical reMarkable Paper Pro. See [`tests/`](tests/) and [`DEVELOPMENT.md`](D
 - Per-point pen dynamics are sensible constants, not recorded strokes — ink can feel uniform
 - The solid-fill thickness (≈7) is beyond what the pen UI produces; editing such a stroke
   on-device behaves like a very fat fineliner
-- "→ Tablet" can send but not confirm (browsers can't read the tablet's reply); it needs the
-  USB cable and *Settings → Storage → USB web interface* enabled
+- "→ Tablet" is for the reMarkable 2 only: it needs the USB cable and *Settings → Storage →
+  USB web interface*, and it can send but not confirm (browsers can't read the tablet's reply).
+  The Paper Pro ships no web interface at all (checked on OS 3.28: no `webui` service, nothing
+  on port 80), so the app refuses the send there and points you to SSH
+- Tested on a Paper Pro on OS 3.28.0.169 (1 October 2026); the v6 format is unchanged since 3.27
+
+## Sideloading over SSH (Paper Pro)
+
+With developer mode on and your key in the tablet's `authorized_keys`:
+
+```sh
+unzip My_Sheet.rmdoc -d sheet
+scp -r sheet/* root@10.11.99.1:/home/root/.local/share/remarkable/xochitl/
+ssh root@10.11.99.1 'systemctl restart xochitl'
+```
+
+The document appears at the top level of My files.
 - No PNG tracing — for raster images, use reMarkable's built-in image insert instead
 
 ## Building & tests

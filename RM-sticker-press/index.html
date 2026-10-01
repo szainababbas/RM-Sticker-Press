@@ -87,7 +87,7 @@
   <div id="ink"><div id="inkBar"><div id="inkFill"></div></div><span id="inkTxt">0 pts</span></div>
   <button id="undoBtn" title="Undo (Ctrl+Z)">↩</button>
   <button id="redoBtn" title="Redo (Ctrl+Y)">↪</button>
-  <button id="sendBtn" title="Send over USB to the tablet's web interface (10.11.99.1)">→ Tablet</button>
+  <button id="sendBtn" title="reMarkable 2 only: send over USB to the tablet's web interface (10.11.99.1). The Paper Pro has no web interface; sideload over SSH instead.">→ Tablet</button>
   <button id="exportBtn" class="primary">Export .rmdoc</button>
 </header>
 <main>
@@ -1821,6 +1821,11 @@ $("exportBtn").onclick = async () => {
 $("sendBtn").onclick = async () => {
   const total = state.pages.reduce((a, p) => a + p.stickers.length, 0);
   if (!total) { log("Nothing to send — add a sticker first.", true); return; }
+  if (state.device === "paperpro" || state.device === "move") {
+    log("The Paper Pro has no USB web interface, so there is nothing to send to. Export the .rmdoc and " +
+        "copy it over SSH instead (see README, \"Sideloading over SSH\").", true);
+    return;
+  }
   $("sendBtn").disabled = true; $("sendBtn").textContent = "Sending…";
   try {
     const { bytes, name } = await buildCurrentRmdoc();
